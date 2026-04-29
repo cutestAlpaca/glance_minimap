@@ -1,0 +1,41 @@
+#glance-minimap-container {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 120px;
+  height: 100vh;
+  z-index: 2147483647; /* Ensure it is on top of everything */
+  background: transparent;
+  /* backdrop-filter: blur(3px); 严重影响重排性能，暂时注释 */
+  /* -webkit-backdrop-filter: blur(3px); */
+  pointer-events: auto;
+  user-select: none;
+  overflow: hidden;
+  transition: opacity 0.3s;
+}
+
+#glance-minimap-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 120px;
+  /* height will be set dynamically via JS */
+  pointer-events: none;
+  display: block;
+}
+
+#glance-minimap-viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  box-shadow: 0 0 5px rgba(0, 0, 0, 0.15);
+  box-sizing: border-box;
+  cursor: grab;
+  border-radius: 4px;
+  will-change: transform; /* Hint for GPU acceleration */
+}
+
+#glance-minimap-viewport:active {
+  cursor: grabbing;
+}

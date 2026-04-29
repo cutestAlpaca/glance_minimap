@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "Minimap - 网页全局代码级小地图",
+  "version": "1.0",
+  "description": "为任意网页生成一个全局沉浸式的透明悬浮小地图，支持快速拖拽、一键跳转、全局结构预览。",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "切换小地图",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "permissions": ["storage", "activeTab"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "css": ["content.css"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ]
+}
