@@ -16,7 +16,17 @@
       "128": "icons/icon128.png"
     }
   },
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage", "activeTab", "declarativeNetRequest"],
+  "host_permissions": ["http://wx.qlogo.cn/*"],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "mixed_content_upgrades",
+        "enabled": true,
+        "path": "rules/mixed-content-upgrades.json"
+      }
+    ]
+  },
   "background": {
     "service_worker": "background.js"
   },

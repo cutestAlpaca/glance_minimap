@@ -1,0 +1,13 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "upgradeScheme"
+    },
+    "condition": {
+      "urlFilter": "||wx.qlogo.cn/",
+      "resourceTypes": ["image"]
+    }
+  }
+]
