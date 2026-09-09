@@ -30,14 +30,75 @@ let spaStabilizeTimer = null;
 let scrollTarget = null;
 let scrollTargetListener = null;
 
+// ==========================================
+// Frame support
+// The content script runs in every frame (manifest: all_frames). Each frame
+// maps its own scroll area: inside a frame, that frame's document IS the scroll
+// root and `position: fixed` resolves against the frame's own viewport, so no
+// cross-frame coordinate math is needed. A full-bleed content iframe therefore
+// lands its minimap exactly where the top frame would have drawn it.
+// ==========================================
+const IS_TOP_FRAME = (() => {
+  try { return window.top === window; } catch (e) { return false; }
+})();
+
+// Frames smaller than this are widgets (ads, social buttons, tracking pixels),
+// not content worth mapping.
+const MIN_FRAME_WIDTH = 500;
+const MIN_FRAME_HEIGHT = 400;
+
+// Tracks the extension-icon toggle so automatic frame visibility never
+// resurrects a minimap the user explicitly hid.
+let userHidden = false;
+
+function frameIsBigEnough() {
+  return window.innerWidth >= MIN_FRAME_WIDTH && window.innerHeight >= MIN_FRAME_HEIGHT;
+}
+
+/**
+ * True when this frame hosts an iframe big enough to be the page's real content
+ * area. Measuring the iframe element is a same-document read, so this works even
+ * when the frame itself is cross-origin and unreadable.
+ */
+function hasFullBleedFrame() {
+  for (const f of document.querySelectorAll('iframe')) {
+    const r = f.getBoundingClientRect();
+    if (r.width >= window.innerWidth * 0.6 && r.height >= window.innerHeight * 0.6) return true;
+  }
+  return false;
+}
+
+/**
+ * Visibility gate, re-evaluated on every redraw so late layout and SPA swaps get
+ * picked up by the observers that are already wired up.
+ *
+ * A frame maps its content only if it has something to scroll. The top frame
+ * additionally yields when it has no scroll of its own but hosts a full-bleed
+ * iframe: that iframe's own content script maps its content, and the top frame's
+ * overlay would otherwise cover it and swallow every mouse event.
+ */
+function shouldShowMinimap() {
+  if (userHidden) return false;
+
+  const hasScroll = getScrollHeight() > getClientHeight() + 50;
+
+  if (!IS_TOP_FRAME) return frameIsBigEnough() && hasScroll;
+  if (hasScroll) return true;
+  return !hasFullBleedFrame();
+}
+
 function findScrollContainer() {
   // If the document itself is scrollable (scrollHeight > clientHeight + threshold),
   // then use window scroll as normal
   const docScrollable = document.documentElement.scrollHeight > window.innerHeight + 50;
   if (docScrollable) return null;
 
-  // Otherwise, find the largest scrollable container in the DOM
-  const candidates = document.querySelectorAll('div, main, article, section');
+  // Otherwise, find the largest scrollable container in the DOM.
+  // Scan all elements — frameworks often scroll inside custom elements
+  // (e.g. Angular's <infinite-scroller>), not just div/main/article/section.
+  // The cheap size checks below run first so getComputedStyle is only called
+  // on the handful of elements that actually overflow.
+  const candidates = document.querySelectorAll('*');
   let bestEl = null;
   let bestArea = 0;
 
@@ -371,6 +432,16 @@ function updateViewportPosition() {
 }
 
 function updateDimensionsAndDraw() {
+  if (!container) return;
+
+  // Re-check visibility here so late layout, resizes and SPA route swaps are all
+  // covered by the observers that already funnel into this function.
+  if (!shouldShowMinimap()) {
+    container.style.display = 'none';
+    return;
+  }
+  container.style.display = 'block';
+
   documentHeight = getScrollHeight();
   windowHeight = getClientHeight();
   windowWidth = scrollTarget
@@ -577,13 +648,43 @@ function getRootDomain(hostname) {
   return hostname;
 }
 
+/**
+ * The hide/show toggle is keyed on the tab's own domain, so every frame has to
+ * agree on it. A cross-origin frame can't read top.location, but Chrome still
+ * exposes the ancestor chain, which is enough.
+ */
+function getToggleDomain() {
+  const origins = location.ancestorOrigins;
+  if (origins && origins.length) {
+    try {
+      return getRootDomain(new URL(origins[origins.length - 1]).hostname);
+    } catch (e) { /* opaque origin — fall through to this frame's own host */ }
+  }
+  return getRootDomain(location.hostname);
+}
+
 // Init — check storage first, skip if page is hidden
 async function checkAndInit() {
-  const pageUrl = getRootDomain(location.hostname);
   const data = await chrome.storage.local.get({ hiddenPages: [] });
-  if (!data.hiddenPages.includes(pageUrl)) {
-    initMinimap();
+  if (data.hiddenPages.includes(getToggleDomain())) {
+    userHidden = true;
+    return;
   }
+
+  if (IS_TOP_FRAME || frameIsBigEnough()) {
+    initMinimap();
+    return;
+  }
+
+  // A content frame can still be mid-layout at document_end. Rather than build a
+  // minimap in every ad iframe, wait and see if this one grows into a real one.
+  const onResize = () => {
+    if (!userHidden && frameIsBigEnough()) {
+      window.removeEventListener('resize', onResize);
+      initMinimap();
+    }
+  };
+  window.addEventListener('resize', onResize);
 }
 
 if (document.readyState === 'loading') {
@@ -595,12 +696,13 @@ if (document.readyState === 'loading') {
 // Show/Hide from background script (persistent toggle)
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'hideMinimap') {
+    userHidden = true;
     if (container) container.style.display = 'none';
   } else if (request.action === 'showMinimap') {
+    userHidden = false;
     if (!container) {
-      initMinimap();
+      if (IS_TOP_FRAME || frameIsBigEnough()) initMinimap();
     } else {
-      container.style.display = 'block';
       redetectScrollTarget();
       updateDimensionsAndDraw();
     }
